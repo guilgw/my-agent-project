@@ -107,7 +107,7 @@ ctx.sidebarRight.openTab('browser', { params: { url: 'http://127.0.0.1:18770' } 
 | --- | --- | --- |
 | `studio_status` | 路径、页面地址、密钥是否配好。不返回密钥 | 可用 |
 | `read_video_hotspots` | 读本地热点缓存和仓库里的今日灵感。不发起付费采集 | 可用 |
-| `collect_video_trends` | 调用 `video_trends.collect`。默认只采 YouTube，会消耗额度 | 未配置的平台会记失败，旧数据保留 |
+| `collect_video_trends` | YouTube 走工作台；TikTok 走 TikHub，每次一页 | 没密钥的平台记失败，旧数据保留 |
 | `read_topic_feed` | 只读本机 AIHOT。不启动采集 | 服务没开时返回说明 |
 | `generate_scripts` | 调用 `pipeline.generate_script_session` 写三版并入库。`chosen` 保持空 | 拒绝，并说明缺密钥 |
 | `list_scripts` / `read_script` | 脚本库和同选题历史。读取不会选用 | 可用 |
@@ -135,7 +135,37 @@ ctx.sidebarRight.openTab('browser', { params: { url: 'http://127.0.0.1:18770' } 
 
 没有发布工具。`record_final_review` 固定返回 `publishes: false` 和 `page_publish_unlocked: false`。工作台页面上的发布登记锁在浏览器 `localStorage` 里，这个文件解锁不了它。终审人仍要在页面上登记；通过之后由运营去平台发布。
 
-制作可能超过一分钟。补丁把 `toolCallTimeoutMs` 设成 600000。MCP 自己的说明里写了同一套门槛，技能里写了完整岗位流程。
+制作可能超过一分钟。补丁把 `toolCallTimeoutMs` 设成 600000。MCP 自己的说明里写了同一套门槛，技能里写了选题、三段式脚本和事实核查。
+
+## TikHub（TikTok 热点）
+
+TikTok 用 [TikHub](https://docs.tikhub.io) 的 App V3 搜索：`GET /api/v1/tiktok/app/v3/fetch_video_search_result`。它能按地区和发布时间筛选；`publish_time` 的 1、7、30 与工作台的天数一致。排序用「最多点赞」。每次只请求一页，默认 10 条，最多 20 条，不翻页。
+
+密钥只读环境变量 `TIKHUB_API_KEY`，Bearer 认证，不写进仓库。可以放在已忽略的 `config.env` 里，启动脚本会把它带给 MCP。
+
+```bash
+# config.env
+TIKHUB_API_KEY=你的令牌
+```
+
+适配层把 TikHub 的 `search_item_list` / `aweme_list` 转成工作台接收器要的 JSON：`title`、`https://www.tiktok.com/@账号/video/数字`、作者、带时区的发布时间，以及 `views` / `likes` / `comments` / `shares`。缺的指标保持 `null`，不写成 0。
+
+```bash
+python3 -m tikhub_feed
+# http://127.0.0.1:8781/videos?q=train+travel&region=GB&days=7&limit=10
+```
+
+设置了 `TIKHUB_API_KEY` 时，`scripts/start.sh` 会顺带启动这个适配层。
+
+工作台的 `video_trends.py` 要求 `VIDEO_TRENDS_TIKTOK_FEED_URL` 必须是 HTTPS，所以不能把 `http://127.0.0.1:8781/videos` 直接写进工作台 `.env`。要让页面上的「采集视频」自己打到适配层，需要先把适配层放到可信 HTTPS 地址后面，再填写：
+
+```bash
+VIDEO_TRENDS_TIKTOK_FEED_URL=https://你的域名/videos
+# 适配层自己读 TIKHUB_API_KEY，这里通常留空
+VIDEO_TRENDS_TIKTOK_TOKEN=
+```
+
+不搭 HTTPS 时，用 MCP 的 `collect_video_trends`，`platforms` 里选 `TikTok`。它直接请求 TikHub，并写入工作台的 `output/video-trends.json`，格式与工作台采集相同。然后在页面上刷新列表就能看到这些视频。平台状态文字在没填 HTTPS 地址时仍可能显示「缺少数据服务地址」，因为这句文案只看 FEED_URL 是否为空；视频条目本身已经在列表里。Instagram 仍没有供应商适配。
 
 ## 测试
 
@@ -179,6 +209,8 @@ PROBE_MODE=auto node scripts/probe-mcp.mjs
 - 流水线在 Linux 上不能完成 macOS 语音转换。虚拟机里只验证了命令拼装和拒绝演示数据。
 - 复盘读的是仓库里的模拟 CSV，不是平台实时数据，也不会自动改脚本。
 - 今日灵感是仓库里已经发布的 JSON。读取和刷新页面都不会重新付费采集。
+- TikHub 按请求计费。每次手动采集只发一页，不自动定时。工作台接收器要求 HTTPS，所以不能把本机 `http://127.0.0.1:8781/videos` 直接写入 `VIDEO_TRENDS_TIKTOK_FEED_URL`。
+- 没填 TikTok 的 HTTPS 地址时，页面上的平台状态可能仍写「缺少数据服务地址」。MCP 写入的视频仍会出现在热点列表里。
 - 右侧浏览器的沙箱可能拦截下载，也可能拦不住页面自己的后续跳转。这是 Harness 浏览器插件自己的限制。
 - 改工作台端口后，要同时改客户端插件里的默认地址。
 - Harness 还在开发者预览。补丁按 `0.2.2-rc.3` 的 `@deepseek-ai/dsh-mcp-client` 字段写的，以后的版本可能要改。

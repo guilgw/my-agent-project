@@ -77,9 +77,13 @@ if [ -n "${RAIL_DRAFT_ROOT:-}" ]; then
 fi
 
 STUDIO_PID=""
+ADAPTER_PID=""
 cleanup() {
   if [ -n "$STUDIO_PID" ]; then
     kill "$STUDIO_PID" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$ADAPTER_PID" ]; then
+    kill "$ADAPTER_PID" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
@@ -93,6 +97,18 @@ fi
 
 PORT="$RAIL_STUDIO_PORT" "$RAIL_PYTHON" "$RAIL_STUDIO_ROOT/studio.py" >"$ROOT/.run/studio.log" 2>&1 &
 STUDIO_PID=$!
+
+if [ -n "${TIKHUB_API_KEY:-}" ]; then
+  if [ -z "${TIKHUB_ADAPTER_PORT:-}" ]; then
+    TIKHUB_ADAPTER_PORT=8781
+  fi
+  export TIKHUB_ADAPTER_PORT
+  "$RAIL_PYTHON" -m tikhub_feed >"$ROOT/.run/tikhub.log" 2>&1 &
+  ADAPTER_PID=$!
+  echo "TikHub 适配层：http://127.0.0.1:${TIKHUB_ADAPTER_PORT}/videos"
+  echo "工作台只接受 HTTPS 数据地址，不能把这个 http 地址写入 VIDEO_TRENDS_TIKTOK_FEED_URL。"
+  echo "请在 Harness 里手动采集 TikTok；或把适配层放到可信 HTTPS 后面，再把那个地址写入工作台 .env。"
+fi
 
 # --patch 属于启动器，必须写在 profile 旁边。写在 web 自己的参数后面时，web 会把它当成未知选项。
 set -- --profile web --patch "$ROOT/harness/rail-studio.cordis.yml" --host 127.0.0.1 --port "$DSH_WEB_PORT"

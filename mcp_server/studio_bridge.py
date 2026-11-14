@@ -209,6 +209,7 @@ def studio_status(_args: dict | None = None) -> dict:
         "minimax": bool(llm.has("MINIMAX_API_KEY")),
         "youtube": bool(trends.get("YOUTUBE_API_KEY")),
         "tiktok_feed": bool(trends.get("VIDEO_TRENDS_TIKTOK_FEED_URL")),
+        "tikhub": bool(os.environ.get("TIKHUB_API_KEY")),
         "instagram_feed": bool(trends.get("VIDEO_TRENDS_INSTAGRAM_FEED_URL")),
     }
     payload["models"] = llm.models_in_use()
@@ -255,23 +256,82 @@ def collect_video_trends(args: dict) -> dict:
         days = args.get("days", 7)
         if isinstance(days, bool) or not isinstance(days, int):
             raise ToolError("days 只能是 1、7 或 30。")
+        platforms = args.get("platforms") or ["YouTube"]
+        if not isinstance(platforms, list) or not platforms:
+            raise ToolError("请选择支持的平台。")
+        count = args.get("tiktok_count", 10)
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 20:
+            raise ToolError("tiktok_count 只能是 1 到 20。TikTok 每次只请求一页，避免重复计费。")
         body = {
             "query": args.get("query"),
             "region": args.get("region") or "GB",
             "days": days,
-            "platforms": args.get("platforms") or ["YouTube"],
+            "platforms": [name for name in platforms if name != "TikTok"],
         }
-        result = load("video_trends").collect(output_dir(), body)
+        result = None
+        if body["platforms"]:
+            result = load("video_trends").collect(output_dir(), body)
+        if "TikTok" in platforms:
+            result = _merge_tiktok(body["query"], body["region"], days, count, skip_cooldown=result is not None)
         items = [item for item in (result.get("items") or []) if isinstance(item, dict)]
+        errors = [f"{row.get('name')}：{row.get('error')}" for row in (result.get("platforms") or []) if row.get("error")]
+        note = "YouTube 走工作台官方接口。TikTok 走 TikHub，每次手动采集只发一页，默认 10 条、最多 20 条。失败的平台保留旧数据。不下载视频，也不发布。"
+        if errors:
+            note += " " + "；".join(errors)
         return {
             "platforms": result.get("platforms"),
             "last_request": result.get("last_request"),
             "count": len(items),
             "items": [_hot_item(item) for item in items[:20]],
-            "note": "采集会消耗已配置平台的额度。失败的平台保留旧数据。此工具不下载视频，也不发布。",
+            "note": note,
         }
 
     return _mutate(lambda: _call(run))
+
+
+def _merge_tiktok(query, region, days, count, skip_cooldown: bool) -> dict:
+    """写入工作台 output/video-trends.json，记录格式与 video_trends.collect 相同。"""
+    from datetime import datetime, timezone
+
+    import tikhub_feed.adapter as tikhub
+
+    trends = load("video_trends")
+    out = output_dir()
+    if not trends.LOCK.acquire(blocking=False):
+        raise ToolError("已有视频采集进行中，请稍后刷新。")
+    try:
+        try:
+            tikhub._query(query if isinstance(query, str) else "", region, days, count)
+        except tikhub.TikHubError as exc:
+            raise ToolError(str(exc)) from exc
+        now = datetime.now(timezone.utc)
+        data = trends.load(out, now)
+        last = data.get("last_request") or {}
+        last_at = trends.date(last.get("at"))
+        if not skip_cooldown and last_at and (now - last_at).total_seconds() < 30:
+            raise ToolError("请间隔 30 秒后再次采集，刷新列表不会消耗接口额度。")
+        data["last_request"] = {"query": query.strip(), "region": region, "days": days, "at": now.isoformat()}
+        previous = data["runs"].get("TikTok", {})
+        run = {**previous, "attempted_at": now.isoformat(), "query": query.strip() if isinstance(query, str) else ""}
+        try:
+            payload = tikhub.search(query, region, days, count)
+            rows = [trends.normalize("TikTok", item, now, "TikHub") for item in payload.get("items") or []]
+            by_id = {row["id"]: row for row in data["items"]}
+            for row in rows:
+                old = by_id.get(row["id"])
+                if not old or trends.date(row["metrics_at"]) >= trends.date(old["metrics_at"]):
+                    by_id[row["id"]] = row
+            data["items"] = sorted(by_id.values(), key=lambda row: row["collected_at"], reverse=True)[:500]
+            run.update(succeeded_at=now.isoformat(), count=len({row["id"] for row in rows}), error=None)
+        except tikhub.TikHubError as exc:
+            run["error"] = redact(exc)[:300]
+        except trends.FeedError as exc:
+            run["error"] = redact(exc)[:300]
+        data["runs"]["TikTok"] = run
+        trends.save(out, data)
+        return trends.present(data, trends.config(), now)
+    finally:
+        trends.LOCK.release()
 
 
 def read_topic_feed(_args: dict | None = None) -> dict:

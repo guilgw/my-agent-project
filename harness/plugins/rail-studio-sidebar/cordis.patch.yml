@@ -33,6 +33,7 @@
           YOUTUBE_API_KEY: !!js process.env.YOUTUBE_API_KEY || ''
           VIDEO_TRENDS_TIKTOK_TOKEN: !!js process.env.VIDEO_TRENDS_TIKTOK_TOKEN || ''
           VIDEO_TRENDS_INSTAGRAM_TOKEN: !!js process.env.VIDEO_TRENDS_INSTAGRAM_TOKEN || ''
+          TIKHUB_API_KEY: !!js process.env.TIKHUB_API_KEY || ''
 
     - id: rail-studio-sidebar
       name: '@local/rail-studio-sidebar'

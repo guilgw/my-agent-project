@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STUDIO = Path(os.environ.get("RAIL_STUDIO_ROOT") or "/tmp/refs/rail-content-studio")
 SECRET_KEYS = (
     "DEEPSEEK_API_KEY", "SCRIPT_API_KEY", "LLM_API_KEY", "VIDEO_API_KEY",
-    "MINIMAX_API_KEY", "YOUTUBE_API_KEY",
+    "MINIMAX_API_KEY", "YOUTUBE_API_KEY", "TIKHUB_API_KEY",
 )
 OUTPUT = Path(tempfile.mkdtemp(prefix="rail-mcp-test-"))
 SAVED_ENV: dict[str, str] = {}
@@ -354,6 +354,7 @@ class ProjectFileTest(unittest.TestCase):
             self.assertIn("ui-sidebar-browser", patch)
             self.assertIn("disabled: false", patch)
             self.assertIn("process.env.DEEPSEEK_API_KEY", patch)
+            self.assertIn("process.env.TIKHUB_API_KEY", patch)
             self.assertNotIn("sk-", patch)
         self.assertIn("name: ./plugins/rail-studio-sidebar/index.js", (ROOT / "harness/rail-studio.cordis.yml").read_text(encoding="utf-8"))
         self.assertIn("openTab('browser'", (ROOT / "harness/plugins/rail-studio-sidebar/client.js").read_text(encoding="utf-8"))

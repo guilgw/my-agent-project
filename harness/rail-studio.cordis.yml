@@ -35,6 +35,7 @@
           YOUTUBE_API_KEY: !!js process.env.YOUTUBE_API_KEY || ''
           VIDEO_TRENDS_TIKTOK_TOKEN: !!js process.env.VIDEO_TRENDS_TIKTOK_TOKEN || ''
           VIDEO_TRENDS_INSTAGRAM_TOKEN: !!js process.env.VIDEO_TRENDS_INSTAGRAM_TOKEN || ''
+          TIKHUB_API_KEY: !!js process.env.TIKHUB_API_KEY || ''
 
     # 相对路径相对本补丁文件。必须指到 index.js：Node 不能把目录当成 ES 模块导入。
     - id: rail-studio-sidebar

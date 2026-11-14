@@ -27,7 +27,7 @@ TOOLS = [
     ),
     _tool(
         "collect_video_trends",
-        "按工作台 video_trends.collect 手动采集视频热点。会消耗已配置平台的额度。只在用户明确要求采集时调用。不下载视频，不发布。",
+        "手动采集视频热点。YouTube 走工作台官方接口；TikTok 走 TikHub，按请求计费，每次只发一页。只在用户明确要求采集时调用。不下载视频，不发布。",
         {
             "query": _string("1–100 字搜索词，例如 train travel。"),
             "region": _string("两位大写国家代码，默认 GB。"),
@@ -35,8 +35,9 @@ TOOLS = [
             "platforms": {
                 "type": "array",
                 "items": {"type": "string", "enum": ["YouTube", "TikTok", "Instagram"]},
-                "description": "要采集的平台。缺省只采集 YouTube。",
+                "description": "要采集的平台。缺省只采集 YouTube。选 TikTok 时使用 TIKHUB_API_KEY。",
             },
+            "tiktok_count": {"type": "integer", "minimum": 1, "maximum": 20, "description": "TikTok 条数，默认 10，最大 20。"},
         },
         ["query"],
     ),
