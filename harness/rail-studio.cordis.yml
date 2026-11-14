@@ -1,0 +1,42 @@
+# DeepSeek Harness 0.2.2 的启动补丁。用 `dsh web --patch` 加载，不修改 Harness 源码。
+# 字段以 packages/mcp/mcp-client 的 README 为准：stdio、serverName、command、args、env、cwd。
+# !!js 在 Harness 进程里求值。显式 env 会盖过它对 KEY/TOKEN 变量的清洗，因此这里只引用
+# process.env，不把密钥写进文件。
+
+# Web 档案默认关闭右侧浏览器。这一行只把 shipped 插件的 disabled 改成 false。
+- id: ui-sidebar-browser
+  disabled: false
+
+- insert:
+    - id: rail-studio-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: rail_studio
+        transport: stdio
+        command: !!js process.env.RAIL_PYTHON || 'python3'
+        args:
+          - "-m"
+          - mcp_server
+        cwd: !!js process.env.MY_AGENT_PROJECT_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'my-agent-project')
+        toolCallTimeoutMs: 600000
+        startupTimeoutMs: 30000
+        failOnStartupError: false
+        env:
+          RAIL_STUDIO_ROOT: !!js process.env.RAIL_STUDIO_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'rail-content-studio')
+          RAIL_STUDIO_PORT: !!js process.env.RAIL_STUDIO_PORT || '18770'
+          RAIL_STUDIO_URL: !!js process.env.RAIL_STUDIO_URL || ('http://127.0.0.1:' + (process.env.RAIL_STUDIO_PORT || '18770'))
+          RAIL_DRAFT_ROOT: !!js process.env.RAIL_DRAFT_ROOT || ''
+          MY_AGENT_PROJECT_ROOT: !!js process.env.MY_AGENT_PROJECT_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'my-agent-project')
+          DEEPSEEK_API_KEY: !!js process.env.DEEPSEEK_API_KEY || ''
+          SCRIPT_API_KEY: !!js process.env.SCRIPT_API_KEY || ''
+          VIDEO_API_KEY: !!js process.env.VIDEO_API_KEY || ''
+          LLM_API_KEY: !!js process.env.LLM_API_KEY || ''
+          MINIMAX_API_KEY: !!js process.env.MINIMAX_API_KEY || ''
+          YOUTUBE_API_KEY: !!js process.env.YOUTUBE_API_KEY || ''
+          VIDEO_TRENDS_TIKTOK_TOKEN: !!js process.env.VIDEO_TRENDS_TIKTOK_TOKEN || ''
+          VIDEO_TRENDS_INSTAGRAM_TOKEN: !!js process.env.VIDEO_TRENDS_INSTAGRAM_TOKEN || ''
+          TIKHUB_API_KEY: !!js process.env.TIKHUB_API_KEY || ''
+
+    # 相对路径相对本补丁文件。必须指到 index.js：Node 不能把目录当成 ES 模块导入。
+    - id: rail-studio-sidebar
+      name: ./plugins/rail-studio-sidebar/index.js
