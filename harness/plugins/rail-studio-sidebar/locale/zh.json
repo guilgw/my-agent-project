@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "轨道工作台",
+    "description": "在右侧浏览器打开轨道工作台。制作工具由旁边的 MCP 补丁提供。",
+    "detail": "docs/DETAIL.md"
+  }
+}

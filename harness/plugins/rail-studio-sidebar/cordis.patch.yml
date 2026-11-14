@@ -1,0 +1,38 @@
+# 可选安装入口：在 Harness 里用插件管理器安装本目录时使用。
+# 一键启动不用这个文件，而用仓库里的 harness/rail-studio.cordis.yml（相对路径，无需先安装）。
+# MCP 段需要和 harness/rail-studio.cordis.yml 保持一致。
+
+- id: ui-sidebar-browser
+  disabled: false
+
+- insert:
+    - id: rail-studio-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: rail_studio
+        transport: stdio
+        command: !!js process.env.RAIL_PYTHON || 'python3'
+        args:
+          - "-m"
+          - mcp_server
+        cwd: !!js process.env.MY_AGENT_PROJECT_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'my-agent-project')
+        toolCallTimeoutMs: 600000
+        startupTimeoutMs: 30000
+        failOnStartupError: false
+        env:
+          RAIL_STUDIO_ROOT: !!js process.env.RAIL_STUDIO_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'rail-content-studio')
+          RAIL_STUDIO_PORT: !!js process.env.RAIL_STUDIO_PORT || '18770'
+          RAIL_STUDIO_URL: !!js process.env.RAIL_STUDIO_URL || ('http://127.0.0.1:' + (process.env.RAIL_STUDIO_PORT || '18770'))
+          RAIL_DRAFT_ROOT: !!js process.env.RAIL_DRAFT_ROOT || ''
+          MY_AGENT_PROJECT_ROOT: !!js process.env.MY_AGENT_PROJECT_ROOT || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'Documents', 'loop', 'my-agent-project')
+          DEEPSEEK_API_KEY: !!js process.env.DEEPSEEK_API_KEY || ''
+          SCRIPT_API_KEY: !!js process.env.SCRIPT_API_KEY || ''
+          VIDEO_API_KEY: !!js process.env.VIDEO_API_KEY || ''
+          LLM_API_KEY: !!js process.env.LLM_API_KEY || ''
+          MINIMAX_API_KEY: !!js process.env.MINIMAX_API_KEY || ''
+          YOUTUBE_API_KEY: !!js process.env.YOUTUBE_API_KEY || ''
+          VIDEO_TRENDS_TIKTOK_TOKEN: !!js process.env.VIDEO_TRENDS_TIKTOK_TOKEN || ''
+          VIDEO_TRENDS_INSTAGRAM_TOKEN: !!js process.env.VIDEO_TRENDS_INSTAGRAM_TOKEN || ''
+
+    - id: rail-studio-sidebar
+      name: '@local/rail-studio-sidebar'

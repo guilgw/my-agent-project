@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Rail studio",
+    "description": "Opens the rail workstation in the right sidebar browser. Production tools come from the MCP patch.",
+    "detail": "docs/DETAIL.md"
+  }
+}
