@@ -94,8 +94,20 @@ class MappingTest(unittest.TestCase):
         self.assertIn("region=GB", calls["url"])
         self.assertIn("sort_type=1", calls["url"])
         self.assertEqual(calls["headers"]["Authorization"], "Bearer unit-test-secret-value")
+        self.assertEqual(calls["headers"]["User-Agent"], adapter.USER_AGENT)
+        self.assertFalse(calls["headers"]["User-Agent"].startswith("Python-urllib/"))
         self.assertNotIn("unit-test-secret-value", calls["url"])
         self.assertEqual(calls["timeout"], 15)
+
+    def test_cloudflare_1010_is_not_described_as_a_quota_error(self):
+        blocked = adapter._tikhub_error(403, b"error code: 1010")
+        self.assertEqual(blocked.status, 403)
+        self.assertEqual(str(blocked), "TikHub 前置防火墙拦截了请求（Cloudflare 1010）。")
+        still_blocked = adapter._tikhub_error(403, b'{"title":"Error 1010: Access denied"}')
+        self.assertIn("Cloudflare 1010", str(still_blocked))
+        quota = adapter._tikhub_error(403, b'{"detail":"forbidden"}')
+        self.assertIn("额度", str(quota))
+        self.assertNotIn("1010", str(quota))
 
     def test_truncates_when_app_v3_returns_more_than_count(self):
         """2026-11-14：count=5 时 search_item_list 实际有 12 条，且每条在 aweme_info 下。"""

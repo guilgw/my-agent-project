@@ -34,6 +34,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 API_URL = "https://api.tikhub.io/api/v1/tiktok/app/v3/fetch_video_search_result"
+# Cloudflare 1010 会拦掉 urllib 默认的 Python-urllib/3.x。这个标识能通过检查。
+USER_AGENT = "rail-agent-project/1.0 (+https://github.com/guilgw/my-agent-project)"
 DEFAULT_COUNT = 10
 # 上游一页要 20 条。TikHub 不保证少返回，但再大也不会多发一次请求。
 FETCH_COUNT = 20
@@ -233,7 +235,11 @@ def _load(keyword: str, region: str, days: int, count: int) -> dict:
         "region": region,
     })
     url = API_URL + "?" + params
-    headers = {"Authorization": "Bearer " + api_key(), "Accept": "application/json"}
+    headers = {
+        "Authorization": "Bearer " + api_key(),
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+    }
     if transport is not None:
         data = transport(url, headers, 15)
         if not isinstance(data, dict):
@@ -244,8 +250,11 @@ def _load(keyword: str, region: str, days: int, count: int) -> dict:
         with build_opener(_NoRedirect).open(request, timeout=15) as response:
             raw = response.read(2_000_001)
     except HTTPError as exc:
-        messages = {401: "TikHub 凭据无效或已过期。", 403: "TikHub 权限不足或额度已用完。", 429: "TikHub 请求过于频繁或额度已用完。"}
-        raise TikHubError(messages.get(exc.code, f"TikHub 返回 HTTP {exc.code}。"), exc.code if exc.code in (401, 403, 429) else 502) from None
+        try:
+            body = exc.read(8192)
+        except OSError:
+            body = b""
+        raise _tikhub_error(exc.code, body) from None
     except (URLError, TimeoutError, OSError):
         raise TikHubError("无法连接 TikHub，请检查网络后重试。", 502) from None
     if len(raw) > 2_000_000:
@@ -260,6 +269,21 @@ def _load(keyword: str, region: str, days: int, count: int) -> dict:
     if code not in (None, 200):
         raise TikHubError("TikHub 没有返回视频搜索结果。", 502)
     return data
+
+
+def _tikhub_error(status: int, body: bytes) -> TikHubError:
+    text = body.decode("utf-8", "replace") if body else ""
+    if status == 403 and "1010" in text:
+        return TikHubError("TikHub 前置防火墙拦截了请求（Cloudflare 1010）。", 403)
+    messages = {
+        401: "TikHub 凭据无效或已过期。",
+        403: "TikHub 权限不足或额度已用完。",
+        429: "TikHub 请求过于频繁或额度已用完。",
+    }
+    return TikHubError(
+        messages.get(status, f"TikHub 返回 HTTP {status}。"),
+        status if status in (401, 403, 429) else 502,
+    )
 
 
 def _awemes(payload: dict):
