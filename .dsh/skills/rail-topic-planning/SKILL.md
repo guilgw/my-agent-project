@@ -12,7 +12,7 @@ whenToUse: 用户说做选题、定本周选题、找火车旅行热点、出选
 目标市场（默认英国）、平台（默认 TikTok）、周期（默认本周）、数量（默认 5）、当前优惠活动和搜码。优惠和搜码只能来自用户，缺了就写「待填：当前活动」，不能编。
 
 ## 2. 三路找选题
-- 热点：先 `mcp__rail_studio__read_video_hotspots` 看缓存；不够新再用 `mcp__rail_studio__collect_video_trends` 采集。TikTok 走 TikHub（按次计费），每次 3–5 个关键词，如 train travel、eurostar、night train、railcard、rail strike，不要循环翻页。YouTube 同样经工作台采集。也可看 `mcp__rail_studio__read_topic_feed`。
+- 热点：先 `mcp__rail_studio__read_video_hotspots` 看缓存。工作台选题页也能直接采 TikTok：平台选 TikTok，填关键词，选「近 24 小时」或「近 7 天」，点「采集视频」。每次点击向 TikHub 发 1 次请求并计费，不要连点，也不要循环翻页。不够新再用 `mcp__rail_studio__collect_video_trends`，每次 3–5 个关键词，如 train travel、eurostar、night train、railcard、rail strike。YouTube 同样经工作台采集。也可看 `mcp__rail_studio__read_topic_feed`。
 - 痛点：怎么买最便宜、要不要提前订、换乘赶不赶得上、行李、退改签、通票划不划算、延误赔偿。这是角度，不是已核实事实。
 - 时间节点：未来 2–6 周内的假期、圣诞新年、春节、复活节、暑假、12 月时刻表和调价。
 

@@ -86,6 +86,62 @@ if [ -z "${SSL_CERT_FILE:-}" ] && command -v security >/dev/null 2>&1; then
   fi
 fi
 
+# 把本地适配层证书接进工作台已经在用的 CA 包。钥匙串导出用的是覆盖写，
+# 所以每次启动都在那之后重新追加；重复启动时先去掉上一次追加的那段。
+install_local_feed_cert() {
+  CERT="$1"
+  CA_BUNDLE="$2"
+  if [ ! -f "$CA_BUNDLE" ]; then
+    return 0
+  fi
+  if grep -q "tikhub-local-adapter" "$CA_BUNDLE"; then
+    awk 'index($0, "tikhub-local-adapter")==0 { print } index($0, "tikhub-local-adapter")>0 { exit }' "$CA_BUNDLE" >"$CA_BUNDLE.part"
+    mv "$CA_BUNDLE.part" "$CA_BUNDLE"
+  fi
+  printf '\n# tikhub-local-adapter\n' >>"$CA_BUNDLE"
+  cat "$CERT" >>"$CA_BUNDLE"
+}
+
+if [ -n "${TIKHUB_API_KEY:-}" ]; then
+  if [ -z "${TIKHUB_ADAPTER_PORT:-}" ]; then
+    TIKHUB_ADAPTER_PORT=8781
+  fi
+  export TIKHUB_ADAPTER_PORT
+  "$RAIL_PYTHON" -c "from tikhub_feed.adapter import ensure_local_cert; ensure_local_cert()"
+  CERT="$ROOT/.run/tikhub-local.crt"
+  CA_BUNDLE="$ROOT/.run/ca-bundle.pem"
+  if [ -f "$CA_BUNDLE" ] && grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; then
+    install_local_feed_cert "$CERT" "$CA_BUNDLE"
+  elif [ -z "${SSL_CERT_FILE:-}" ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cp /etc/ssl/certs/ca-certificates.crt "$CA_BUNDLE"
+    install_local_feed_cert "$CERT" "$CA_BUNDLE"
+  else
+    echo "没有可追加的 CA 包，工作台可能不信任本地 TikTok 证书。" >&2
+  fi
+  if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "$CA_BUNDLE" ]; then
+    BUNDLE_BYTES="$(wc -c <"$CA_BUNDLE" | tr -d ' ')"
+    # 只有系统证书加上本地证书时才交给 Python。单独一个自签证书会让 TikHub 校验失败。
+    if [ "$BUNDLE_BYTES" -gt 20000 ]; then
+      SSL_CERT_FILE="$CA_BUNDLE"
+      export SSL_CERT_FILE
+    fi
+  fi
+  TOKEN_FILE="$ROOT/.run/tikhub-local.token"
+  if [ ! -s "$TOKEN_FILE" ]; then
+    (umask 077; openssl rand -hex 32 >"$TOKEN_FILE")
+  fi
+  chmod 600 "$TOKEN_FILE"
+  LOCAL_FEED_URL="https://127.0.0.1:${TIKHUB_ADAPTER_PORT}/videos"
+  if [ -z "${VIDEO_TRENDS_TIKTOK_FEED_URL:-}" ]; then
+    VIDEO_TRENDS_TIKTOK_FEED_URL="$LOCAL_FEED_URL"
+    export VIDEO_TRENDS_TIKTOK_FEED_URL
+  fi
+  if [ -z "${VIDEO_TRENDS_TIKTOK_TOKEN:-}" ] && [ "$VIDEO_TRENDS_TIKTOK_FEED_URL" = "$LOCAL_FEED_URL" ]; then
+    VIDEO_TRENDS_TIKTOK_TOKEN="$(tr -d '[:space:]' <"$TOKEN_FILE")"
+    export VIDEO_TRENDS_TIKTOK_TOKEN
+  fi
+fi
+
 export RAIL_STUDIO_ROOT RAIL_STUDIO_PORT RAIL_STUDIO_URL RAIL_PYTHON MY_AGENT_PROJECT_ROOT
 if [ -n "${RAIL_DRAFT_ROOT:-}" ]; then
   export RAIL_DRAFT_ROOT
@@ -114,15 +170,14 @@ PORT="$RAIL_STUDIO_PORT" "$RAIL_PYTHON" "$RAIL_STUDIO_ROOT/studio.py" >"$ROOT/.r
 STUDIO_PID=$!
 
 if [ -n "${TIKHUB_API_KEY:-}" ]; then
-  if [ -z "${TIKHUB_ADAPTER_PORT:-}" ]; then
-    TIKHUB_ADAPTER_PORT=8781
-  fi
-  export TIKHUB_ADAPTER_PORT
   "$RAIL_PYTHON" -m tikhub_feed >"$ROOT/.run/tikhub.log" 2>&1 &
   ADAPTER_PID=$!
-  echo "TikHub 适配层：http://127.0.0.1:${TIKHUB_ADAPTER_PORT}/videos"
-  echo "工作台只接受 HTTPS 数据地址，不能把这个 http 地址写入 VIDEO_TRENDS_TIKTOK_FEED_URL。"
-  echo "请在 Harness 里手动采集 TikTok；或把适配层放到可信 HTTPS 后面，再把那个地址写入工作台 .env。"
+  if [ "${VIDEO_TRENDS_TIKTOK_FEED_URL:-}" = "https://127.0.0.1:${TIKHUB_ADAPTER_PORT}/videos" ]; then
+    echo "TikHub 已接入工作台选题页：${VIDEO_TRENDS_TIKTOK_FEED_URL}"
+    echo "在选题策划页把平台选成 TikTok，填写关键词，采集范围选「近 24 小时」或「近 7 天」，点「采集视频」。每次采集向 TikHub 发 1 次请求并计费。"
+  else
+    echo "已保留现有 VIDEO_TRENDS_TIKTOK_FEED_URL，未改成本地适配层。"
+  fi
 fi
 
 # --patch 属于启动器，必须写在 profile 旁边。写在 web 自己的参数后面时，web 会把它当成未知选项。
