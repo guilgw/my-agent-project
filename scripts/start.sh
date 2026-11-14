@@ -71,6 +71,21 @@ else
   exit 1
 fi
 
+# macOS 上 python.org / Homebrew 的 Python 常常读不到系统证书，访问 DeepSeek、TikHub 会报 CERTIFICATE_VERIFY_FAILED。
+# 启动时从系统钥匙串导出一份证书包给 Python 用；已手动设置 SSL_CERT_FILE 时不覆盖。
+if [ -z "${SSL_CERT_FILE:-}" ] && command -v security >/dev/null 2>&1; then
+  CA_BUNDLE="$ROOT/.run/ca-bundle.pem"
+  {
+    security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain
+    security find-certificate -a -p /Library/Keychains/System.keychain
+    security find-certificate -a -p "$HOME/Library/Keychains/login.keychain-db"
+  } >"$CA_BUNDLE" 2>/dev/null || true
+  if grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE" 2>/dev/null; then
+    SSL_CERT_FILE="$CA_BUNDLE"
+    export SSL_CERT_FILE
+  fi
+fi
+
 export RAIL_STUDIO_ROOT RAIL_STUDIO_PORT RAIL_STUDIO_URL RAIL_PYTHON MY_AGENT_PROJECT_ROOT
 if [ -n "${RAIL_DRAFT_ROOT:-}" ]; then
   export RAIL_DRAFT_ROOT
