@@ -71,6 +71,34 @@ class MappingTest(unittest.TestCase):
         self.assertNotIn("unit-test-secret-value", calls["url"])
         self.assertEqual(calls["timeout"], 15)
 
+    def test_truncates_when_app_v3_returns_more_than_count(self):
+        """2026-11-14：count=5 时 search_item_list 实际有 12 条，且每条在 aweme_info 下。"""
+        rows = []
+        for index in range(12):
+            rows.append(aweme(
+                aweme_id=f"73000000000000000{index:02d}",
+                desc=f"Train travel clip {index}",
+                author={"unique_id": f"rail{index}", "nickname": f"Rail {index}"},
+                statistics={"play_count": 1200 - index, "digg_count": 80 - index},
+            ))
+        calls = {}
+
+        def transport(url, headers, timeout):
+            calls["url"] = url
+            return {"code": 200, "data": {"search_item_list": [{"aweme_info": row} for row in rows]}}
+
+        adapter.transport = transport
+        result = adapter.search("train travel", "GB", 7, 5)
+        self.assertEqual(len(result["items"]), 5)
+        self.assertEqual([item["metrics"]["views"] for item in result["items"]], [1200, 1199, 1198, 1197, 1196])
+        self.assertEqual([item["metrics"]["likes"] for item in result["items"]], [80, 79, 78, 77, 76])
+        self.assertEqual(result["items"][0]["title"], "Train travel clip 0")
+        self.assertNotIn("7300000000000000011", json.dumps(result))
+        self.assertIn("/api/v1/tiktok/app/v3/fetch_video_search_result?", calls["url"])
+        self.assertNotIn("fetch_search_video", calls["url"])
+        for part in ("keyword=train+travel", "count=5", "offset=0", "sort_type=1", "publish_time=7", "region=GB"):
+            self.assertIn(part, calls["url"])
+
     def test_reads_aweme_list_and_skips_rows_without_a_handle(self):
         adapter.transport = lambda url, headers, timeout: {
             "code": 200,
@@ -170,6 +198,23 @@ class CacheTest(unittest.TestCase):
             "published_at": row["published_at"], "metrics": row["metrics"],
         }, datetime.now(timezone.utc), "TikHub")
         self.assertEqual(normalized["video_id"], "7300000000000000001")
+
+    def test_cache_keeps_only_requested_count_when_tikhub_returns_twelve(self):
+        rows = [aweme(aweme_id=f"73000000000000000{index:02d}", desc=f"Train {index}",
+                      author={"unique_id": f"rail{index}"},
+                      statistics={"play_count": 100 - index, "digg_count": 10 - index}) for index in range(12)]
+        adapter.transport = lambda url, headers, timeout: {
+            "code": 200, "data": {"search_item_list": [{"aweme_info": row} for row in rows]},
+        }
+        result = self.bridge.collect_video_trends({
+            "query": "train travel", "region": "GB", "days": 7, "platforms": ["TikTok"], "tiktok_count": 5,
+        })
+        self.assertEqual(len(result["items"]), 5)
+        saved = json.loads((self.output / "video-trends.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(saved["items"]), 5)
+        self.assertEqual(saved["runs"]["TikTok"]["count"], 5)
+        self.assertEqual(saved["items"][0]["metrics"]["views"], 100)
+        self.assertEqual(saved["items"][0]["metrics"]["likes"], 10)
 
     def test_second_tiktok_collect_inside_thirty_seconds_does_not_call_again(self):
         calls = []

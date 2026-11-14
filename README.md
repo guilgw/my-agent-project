@@ -139,7 +139,9 @@ ctx.sidebarRight.openTab('browser', { params: { url: 'http://127.0.0.1:18770' } 
 
 ## TikHub（TikTok 热点）
 
-TikTok 用 [TikHub](https://docs.tikhub.io) 的 App V3 搜索：`GET /api/v1/tiktok/app/v3/fetch_video_search_result`。它能按地区和发布时间筛选；`publish_time` 的 1、7、30 与工作台的天数一致。排序用「最多点赞」。每次只请求一页，默认 10 条，最多 20 条，不翻页。
+TikTok 只用 [TikHub](https://docs.tikhub.io) 的 App V3：`GET /api/v1/tiktok/app/v3/fetch_video_search_result`。2026-11-14 用真实密钥实测，`keyword=train travel`、`count=5`、`offset=0`、`sort_type=1`、`publish_time=7`、`region=GB` 返回 code 200 并计费，视频在 `data.search_item_list[].aweme_info`。同一次实测里 Web 接口 `GET /api/v1/tiktok/web/fetch_search_video?keyword=train travel&count=3&offset=0` 返回 400 且未计费，因此不调用，也不作为备用。
+
+App V3 能按地区和发布时间筛选；`publish_time` 的 1、7、30 与工作台的天数一致。排序用「最多点赞」。每次只请求一页，默认 10 条，最多 20 条，不翻页。TikHub 不保证遵守 `count`：传 5 时曾返回 12 条。适配层只保留请求的条数。
 
 密钥只读环境变量 `TIKHUB_API_KEY`，Bearer 认证，不写进仓库。可以放在已忽略的 `config.env` 里，启动脚本会把它带给 MCP。
 

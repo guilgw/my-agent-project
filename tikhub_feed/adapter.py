@@ -6,9 +6,11 @@
 放到可信 HTTPS 地址后面之后，工作台页面才能把 FEED_URL 指过来。
 MCP 采集不走这个限制，直接调用 `search` 再写入同一份缓存。
 
-接口选用 TikHub App V3 `GET /api/v1/tiktok/app/v3/fetch_video_search_result`：
-它带 region，且 publish_time 的 1、7、30 与工作台的天数一致。每次只发一页，
-避免翻页再计一次费。
+只请求 App V3 `GET /api/v1/tiktok/app/v3/fetch_video_search_result`。
+2026-11-14 实测：Web 的 `GET /api/v1/tiktok/web/fetch_search_video` 对
+`keyword=train travel&count=3&offset=0` 返回 400，且未计费，所以不调用、也不做备用。
+同一天 App V3 在 `count=5` 时 `data.search_item_list` 返回了 12 条；本模块按请求条数截断。
+App V3 带 region，publish_time 的 1、7、30 与工作台的天数一致。每次只发一页。
 """
 
 from __future__ import annotations
@@ -64,7 +66,8 @@ def search(query: str, region: str = "GB", days: int = 7, limit: int = DEFAULT_C
         items.append(item)
         if len(items) >= count:
             break
-    return {"items": items}
+    # TikHub 会多给。实测 count=5 时 search_item_list 有 12 条，这里再截一次。
+    return {"items": items[:count]}
 
 
 def serve() -> None:
