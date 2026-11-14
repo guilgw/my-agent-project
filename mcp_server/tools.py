@@ -37,7 +37,7 @@ TOOLS = [
                 "items": {"type": "string", "enum": ["YouTube", "TikTok", "Instagram"]},
                 "description": "要采集的平台。缺省只采集 YouTube。选 TikTok 时使用 TIKHUB_API_KEY。",
             },
-            "tiktok_count": {"type": "integer", "minimum": 1, "maximum": 20, "description": "TikTok 条数，默认 10，最大 20。"},
+            "tiktok_count": {"type": "integer", "minimum": 1, "maximum": 20, "description": "TikTok 返回条数上限，默认 10，最大 20。适配层还会按 TIKHUB_TOP_N 截断，默认不超过 10。"},
         },
         ["query"],
     ),

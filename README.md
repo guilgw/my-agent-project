@@ -76,8 +76,10 @@ Harness 启动 MCP 子进程时会抹掉变量名里带 `KEY`、`TOKEN`、`SECRE
 
 1. 读 `config.env`（没有就用上面的默认路径）。
 2. 优先用工作台的 `.venv/bin/python`，否则用 `python3`。
-3. 以 `PORT=18770` 启动 `studio.py`。
-4. 执行 `dsh --profile web --patch <本仓库>/harness/rail-studio.cordis.yml --host 127.0.0.1 --port 3080`。
+3. 在 macOS 上从系统钥匙串导出 `.run/ca-bundle.pem`，并设为 `SSL_CERT_FILE`（已经设置过则不覆盖）。
+4. 若设置了 `TIKHUB_API_KEY`：生成本机证书、把证书追加进这个 CA 包、生成本地令牌，再把 TikTok 数据地址和令牌交给即将启动的工作台进程。
+5. 以 `PORT=18770` 启动 `studio.py`，并在有密钥时启动 `python -m tikhub_feed`。
+6. 执行 `dsh --profile web --patch <本仓库>/harness/rail-studio.cordis.yml --host 127.0.0.1 --port 3080`。
 
 `--patch` 是启动器的参数，必须和 `--profile` 写在一起。写成 `dsh web --port 3080 --patch ...` 时，Web 应用会把它当成未知选项。设 `DSH_NO_OPEN=1` 可以不让 dsh 打开系统浏览器。按 Ctrl+C 会一并停掉工作台。
 
@@ -141,33 +143,36 @@ ctx.sidebarRight.openTab('browser', { params: { url: 'http://127.0.0.1:18770' } 
 
 TikTok 只用 [TikHub](https://docs.tikhub.io) 的 App V3：`GET /api/v1/tiktok/app/v3/fetch_video_search_result`。2026-11-14 用真实密钥实测，`keyword=train travel`、`count=5`、`offset=0`、`sort_type=1`、`publish_time=7`、`region=GB` 返回 code 200 并计费，视频在 `data.search_item_list[].aweme_info`。同一次实测里 Web 接口 `GET /api/v1/tiktok/web/fetch_search_video?keyword=train travel&count=3&offset=0` 返回 400 且未计费，因此不调用，也不作为备用。
 
-App V3 能按地区和发布时间筛选；`publish_time` 的 1、7、30 与工作台的天数一致。排序用「最多点赞」。每次只请求一页，默认 10 条，最多 20 条，不翻页。TikHub 不保证遵守 `count`：传 5 时曾返回 12 条。适配层只保留请求的条数。
-
-密钥只读环境变量 `TIKHUB_API_KEY`，Bearer 认证，不写进仓库。可以放在已忽略的 `config.env` 里，启动脚本会把它带给 MCP。
+密钥只读环境变量 `TIKHUB_API_KEY`，Bearer 认证，不写进仓库。可以放在已忽略的 `config.env` 里。
 
 ```bash
 # config.env
 TIKHUB_API_KEY=你的令牌
 ```
 
-适配层把 TikHub 的 `search_item_list` / `aweme_list` 转成工作台接收器要的 JSON：`title`、`https://www.tiktok.com/@账号/video/数字`、作者、带时区的发布时间，以及 `views` / `likes` / `comments` / `shares`。缺的指标保持 `null`，不写成 0。
+有这把密钥时，`scripts/start.sh` 会做四件事，然后才启动工作台：
 
-```bash
-python3 -m tikhub_feed
-# http://127.0.0.1:8781/videos?q=train+travel&region=GB&days=7&limit=10
-```
+1. 用 openssl 在 `.run/` 生成本机证书（已有且仍签给 `127.0.0.1` 和 `localhost` 就复用）。私钥是 `.run/tikhub-local.key`，权限 600。
+2. 把证书追加到 `.run/ca-bundle.pem`。工作台和适配层都用这份包做 `SSL_CERT_FILE`，所以页面请求 `https://127.0.0.1` 时能通过校验，访问 TikHub 的正式证书也不受影响。启动前如果已经自己设置了 `SSL_CERT_FILE`，脚本不会替换它，需要把 `.run/tikhub-local.crt` 追加进那份证书包。
+3. 生成随机本地令牌 `.run/tikhub-local.token`（权限 600），并导出为工作台的 `VIDEO_TRENDS_TIKTOK_TOKEN`。适配层要求 `Authorization: Bearer` 与它对上，否则返回 401，避免同机其他进程拿着你的密钥刷额度。
+4. 若你还没有自己设置 `VIDEO_TRENDS_TIKTOK_FEED_URL`，就把它设为 `https://127.0.0.1:8781/videos`（端口可用 `TIKHUB_ADAPTER_PORT` 改）。已经设置过的地址不会被覆盖。
 
-设置了 `TIKHUB_API_KEY` 时，`scripts/start.sh` 会顺带启动这个适配层。
+这三个 `.run/` 文件都已被 `.gitignore` 忽略，不要提交，也不要拷到别的机器当正式证书用。
 
-工作台的 `video_trends.py` 要求 `VIDEO_TRENDS_TIKTOK_FEED_URL` 必须是 HTTPS，所以不能把 `http://127.0.0.1:8781/videos` 直接写进工作台 `.env`。要让页面上的「采集视频」自己打到适配层，需要先把适配层放到可信 HTTPS 地址后面，再填写：
+### 在选题页采集
 
-```bash
-VIDEO_TRENDS_TIKTOK_FEED_URL=https://你的域名/videos
-# 适配层自己读 TIKHUB_API_KEY，这里通常留空
-VIDEO_TRENDS_TIKTOK_TOKEN=
-```
+启动后打开 [http://127.0.0.1:18770/#topics](http://127.0.0.1:18770/#topics)。在「今日灵感」里：
 
-不搭 HTTPS 时，用 MCP 的 `collect_video_trends`，`platforms` 里选 `TikTok`。它直接请求 TikHub，并写入工作台的 `output/video-trends.json`，格式与工作台采集相同。然后在页面上刷新列表就能看到这些视频。平台状态文字在没填 HTTPS 地址时仍可能显示「缺少数据服务地址」，因为这句文案只看 FEED_URL 是否为空；视频条目本身已经在列表里。Instagram 仍没有供应商适配。
+1. 平台选 **TikTok**（不要选「全部平台」，除非你也想同时花 YouTube 的额度）。
+2. 填写搜索关键词，例如 `train travel`。地区按目标市场选，默认英国。
+3. 采集范围选 **近 24 小时** 或 **近 7 天**。页面上还有「近 30 天」，同样只会发 1 次请求。
+4. 点 **采集视频**。
+
+工作台会向适配层追加 `q`、`region`、`days` 和 `limit=25`。适配层仍只调用上面的 App V3，参数是 `sort_type=1`、`region`、`publish_time` 等于所选天数，`count=20`，`offset=0`。不翻页，所以点一次只产生 **1 次 TikHub 请求**。TikHub 按请求计费；刷新列表不会再请求。工作台自己还有 30 秒冷却，连点会被拦住。
+
+TikHub 的 `publish_time` 不可靠：实测近 24 小时的一页里，41 条有 23 条落在窗口外。适配层按每条视频的 `create_time` 丢掉窗口外的结果（也丢掉没有发布时间、或比现在超前 5 分钟以上的），再按 `play_count` 从高到低留下前 N 条。N 是环境变量 `TIKHUB_TOP_N`，默认 10，并且不会超过这次的 `limit`。缺的播放、点赞、评论、分享保持 `null`，不写成 0。页面按播放量降序展示。
+
+MCP 的 `collect_video_trends` 仍然可以直接选 TikTok。它不经过这个 HTTPS 地址，而是在进程里调用同一个 `search`，写入工作台的 `output/video-trends.json`。Instagram 仍没有供应商适配。没有 `TIKHUB_API_KEY` 时，选题页上的 TikTok 状态会仍是「缺少数据服务地址」，因为脚本不会去设置数据地址。
 
 ## 测试
 
@@ -211,8 +216,9 @@ PROBE_MODE=auto node scripts/probe-mcp.mjs
 - 流水线在 Linux 上不能完成 macOS 语音转换。虚拟机里只验证了命令拼装和拒绝演示数据。
 - 复盘读的是仓库里的模拟 CSV，不是平台实时数据，也不会自动改脚本。
 - 今日灵感是仓库里已经发布的 JSON。读取和刷新页面都不会重新付费采集。
-- TikHub 按请求计费。每次手动采集只发一页，不自动定时。工作台接收器要求 HTTPS，所以不能把本机 `http://127.0.0.1:8781/videos` 直接写入 `VIDEO_TRENDS_TIKTOK_FEED_URL`。
-- 没填 TikTok 的 HTTPS 地址时，页面上的平台状态可能仍写「缺少数据服务地址」。MCP 写入的视频仍会出现在热点列表里。
+- TikHub 按请求计费。选题页每点一次「采集视频」只发 1 个 App V3 请求，不翻页，也不自动定时。刷新列表不请求。
+- 环境变量或 `config.env` 里如果已经写了 `VIDEO_TRENDS_TIKTOK_FEED_URL`，启动脚本不会改成它自己的本地地址。想用本机适配层时，删掉这个变量后再启动。
+- 没配 `TIKHUB_API_KEY` 时，页面上的 TikTok 状态仍是「缺少数据服务地址」。
 - 右侧浏览器的沙箱可能拦截下载，也可能拦不住页面自己的后续跳转。这是 Harness 浏览器插件自己的限制。
 - 改工作台端口后，要同时改客户端插件里的默认地址。
 - Harness 还在开发者预览。补丁按 `0.2.2-rc.3` 的 `@deepseek-ai/dsh-mcp-client` 字段写的，以后的版本可能要改。

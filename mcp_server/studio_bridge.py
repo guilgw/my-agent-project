@@ -275,7 +275,7 @@ def collect_video_trends(args: dict) -> dict:
             result = _merge_tiktok(body["query"], body["region"], days, count, skip_cooldown=result is not None)
         items = [item for item in (result.get("items") or []) if isinstance(item, dict)]
         errors = [f"{row.get('name')}：{row.get('error')}" for row in (result.get("platforms") or []) if row.get("error")]
-        note = "YouTube 走工作台官方接口。TikTok 走 TikHub，每次手动采集只发一页，默认 10 条、最多 20 条。失败的平台保留旧数据。不下载视频，也不发布。"
+        note = "YouTube 走工作台官方接口。TikTok 走 TikHub，每次只发 1 个请求并按次计费；先丢掉不在天数窗口内的视频，再按播放量保留前若干条（默认 10，不超过 tiktok_count）。失败的平台保留旧数据。不下载视频，也不发布。"
         if errors:
             note += " " + "；".join(errors)
         return {
